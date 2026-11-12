@@ -1,0 +1,48 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+
+  db:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_PASSWORD: heatguard
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./sapper-backend/src/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -h 127.0.0.1"]
+      interval: 3s
+      retries: 20
+
+  backend:
+    build: ./sapper-backend
+    init: true
+    ports:
+      - "3001:3001"
+    environment:
+      MQTT_URL: mqtt://mosquitto:1883
+      PG_HOST: db
+      PG_PASSWORD: heatguard
+    depends_on:
+      mosquitto:
+        condition: service_started
+      db:
+        condition: service_healthy
+
+  simulator:
+    build: ./sensor-sim
+    init: true
+    command: ["1000"]
+    environment:
+      MQTT_HOST: mosquitto
+    depends_on:
+      - mosquitto
+
+volumes:
+  dbdata:
